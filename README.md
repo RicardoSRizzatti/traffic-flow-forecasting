@@ -1,22 +1,95 @@
-# Data Science Template
+# Reconstrução e previsão do estado do tráfego em rodovias
 
-Template para projetos de ciência de dados, da extração dos dados ao modelo servido num webapp: **ETL → treinamento (ONNX) → API FastAPI + front React**, tudo automatizado com `make` e empacotado em Docker.
+Reconstruir velocidade e fluxo onde os sensores não medem, prever congestionamentos nos próximos 30 minutos e estimar a demanda que gera esse tráfego, a partir de dados de detectores de rodovias da Califórnia. O problema é o do **TrafficFlowBench**, competição da **IEEE Big Data Cup 2026** hospedada no Kaggle.
 
-O repositório já vem com um exemplo funcionando de ponta a ponta (classificação de espécies do dataset Iris). Ele serve de referência e deve ser substituído pelo seu problema.
+> 🚧 Projeto em andamento. O roteiro e o status de cada etapa estão na seção [Roteiro](#roteiro).
 
 ---
 
-## Sobre o projeto
+## Contexto
 
-> Preencha esta seção em cada projeto criado a partir do template. O texto abaixo descreve o exemplo.
+Agências de trânsito monitoram rodovias com detectores instalados no pavimento, que medem a cada poucos minutos quantos veículos passam (fluxo), a que velocidade e com que ocupação da pista. Essa rede é esparsa e falha com frequência: há trechos sem sensor, detectores desligados e janelas inteiras sem dado. Mesmo assim, operar a rodovia exige saber o estado do tráfego em todo o corredor, antecipar onde vai formar fila e entender de onde vem a demanda.
+
+O TrafficFlowBench reúne esses três problemas num único benchmark, construído sobre uma rede viária extraída do OpenStreetMap (formato GMNS), observações de detectores no padrão do PeMS (Caltrans) em intervalos de 5 minutos e informações abertas de trajetórias GPS e pontos de interesse. Por trás de todas as tarefas está a teoria de fluxo de tráfego: velocidade, densidade e fluxo de cada trecho seguem um **diagrama fundamental**, e uma boa solução precisa respeitar essa física, não só acertar números.
+
+## O desafio
+
+São dez corredores de rodovia com dados a cada 5 minutos e quatro tarefas avaliadas sobre os mesmos dados:
+
+| Tarefa | O que prever | Peso no score |
+|---|---|---|
+| 1. Reconstrução do estado | Velocidade e fluxo em detectores e instantes retirados da base | 35% |
+| 2. Previsão de filas | Quais trechos estarão congestionados nos próximos 30 minutos (classificação binária) | 30% |
+| 3. Consistência física | Se a reconstrução da tarefa 1 respeita o diagrama fundamental e a conservação de fluxo | 15% |
+| 4. Estimativa de demanda (ODME) | Fluxos não negativos por caminho, coerentes com as contagens nos detectores | 20% |
+
+O que torna o problema difícil:
+
+- **Dados esparsos e com lacunas**, que exigem combinar informação no tempo (o mesmo detector em outros instantes) e no espaço (detectores vizinhos no corredor).
+- **Eventos raros**: a formação de fila é a minoria das observações e o que mais importa prever.
+- **Restrições físicas**: uma previsão estatisticamente boa pode violar a relação entre velocidade, densidade e fluxo e perder pontos na tarefa 3.
+- **Volume**: a base tem cerca de 12 GB e a submissão final passa de 6 milhões de linhas.
+- **Generalização no tempo**: o leaderboard público avalia um mês e a classificação final é decidida por outro mês, gerado à parte.
+
+## Objetivo e métrica
+
+**Objetivo:** construir uma solução para as quatro tarefas que supere com folga os baselines da competição, com atenção especial à reconstrução (tarefa 1) e à previsão de filas (tarefa 2), e servir o modelo de previsão de filas por uma API.
+
+**Métrica:** o score final é a soma ponderada dos scores das tarefas:
+
+```
+Score = 0,35·S_estado + 0,30·S_fila + 0,15·S_física + 0,20·S_ODME
+```
+
+Cada `S` está entre 0 e 1. A definição exata de cada componente está na aba *Evaluation* da competição no Kaggle; a descrição do benchmark menciona erros de previsão do tipo RMSE/MAE para velocidade e fluxo.
+
+Métricas internas para iterar: RMSE e MAE de velocidade e fluxo por corredor; precisão, recall e F1 dos eventos de fila; taxa de violação do diagrama fundamental.
+
+## Dados
 
 | | |
 |---|---|
-| **Problema** | Classificar a espécie de uma flor (setosa, versicolor ou virginica) a partir de 4 medidas. |
-| **Dados** | Dataset Iris (150 amostras), carregado do scikit-learn em `etl/extract.py`. |
-| **Abordagem** | `StandardScaler` + `LogisticRegression`, exportados juntos em ONNX. |
-| **Métrica principal** | F1 macro no conjunto de teste (20%, estratificado). |
-| **Resultado** | Ver `models/metadata.json` ou a seção *Qualidade do modelo* no app. |
+| **Competição (dados e regras)** | <https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench> |
+| **Descrição do benchmark** | <https://bigdataieee.org/BigData2026/cup/trafficflowbench/> |
+| **IEEE Big Data Cup 2026** | <https://bigdataieee.org/BigData2026/cup/> |
+| **Fontes** | Rede viária do OpenStreetMap em GMNS (OSM2GMNS); detectores no padrão PeMS (velocidade, fluxo e ocupação a cada 5 min); trajetórias GPS e pontos de interesse abertos |
+| **Tamanho** | Cerca de 12 GB descompactados |
+| **Uso** | Os dados seguem as regras da competição e não podem ser redistribuídos |
+
+Os dados **não são versionados** neste repositório. Para reproduzir, aceite as regras na página da competição e baixe com a CLI do Kaggle (token em `~/.kaggle/kaggle.json`):
+
+```bash
+make data   # usa a CLI do Kaggle via uv e descompacta em data/raw/trafficflowbench
+```
+
+**Prazos:** pelo cronograma da IEEE Big Data Cup 2026, as equipes entregam relatório final e solução até 15/11/2026, e os vencedores são apresentados na IEEE BigData 2026 (Phoenix, 14 a 17/12/2026). Confira as datas da competição na aba *Timeline* do Kaggle.
+
+## Sobre o projeto
+
+| | |
+|---|---|
+| **Problema** | Reconstruir e prever o estado do tráfego em corredores de rodovia e estimar a demanda origem-destino. |
+| **Dados** | TrafficFlowBench (IEEE Big Data Cup 2026): dez corredores, detectores a cada 5 minutos. |
+| **Abordagem (planejada)** | Baselines por perfil histórico (dia da semana × horário) e interpolação espaço-temporal; gradient boosting com defasagens e detectores vizinhos; calibração do diagrama fundamental por trecho para corrigir a reconstrução; mínimos quadrados não negativos para a demanda. Validação por blocos de dias. |
+| **Métrica principal** | Score ponderado da competição (0,35 / 0,30 / 0,15 / 0,20). |
+| **Resultado** | A preencher: ver `models/metadata.json` ou a seção *Qualidade do modelo* no app. |
+
+## Roteiro
+
+- [ ] Baixar os dados para `data/raw/trafficflowbench` e adaptar `etl/extract.py` aos arquivos da competição
+- [ ] Análise exploratória em `notebooks/`: cobertura dos detectores, padrões diários e semanais, episódios de fila, diagrama fundamental empírico por trecho
+- [ ] Baselines das quatro tarefas e primeira submissão completa
+- [ ] Tarefa 1: modelo de reconstrução com features temporais e espaciais, validado por blocos de dias
+- [ ] Tarefa 2: classificador de fila para 30 minutos à frente, exportado em ONNX e servido pela API
+- [ ] Tarefa 3: ajuste da reconstrução ao diagrama fundamental calibrado
+- [ ] Tarefa 4: estimativa de fluxos por caminho a partir das contagens
+- [ ] Relatório com resultados por tarefa e por corredor
+
+## Referências
+
+- Descrição do benchmark e critérios de avaliação: <https://bigdataieee.org/BigData2026/cup/trafficflowbench/>
+- Caltrans Performance Measurement System (PeMS): <https://pems.dot.ca.gov/>
+- GMNS — General Modeling Network Specification: <https://github.com/zephyr-data-specs/GMNS>
 
 ---
 
@@ -173,18 +246,6 @@ Gráficos padronizados ficam em `app/frontend/src/charts/`:
 - `BarChart`, `LineChart` (com amostragem LTTB e zoom para séries longas) e `HeatmapChart`.
 
 Para um novo tipo de gráfico: registre-o em `charts/echarts.ts` e crie o componente em `charts/` usando `baseOption`, `valueAxis` e `categoryAxis` do tema.
-
----
-
-## Novo projeto a partir do template
-
-1. No GitHub: **Use this template → Create a new repository**.
-2. Preencha a seção *Sobre o projeto* deste README.
-3. Ajuste `configs/config.yaml`: nome do projeto, tabela, target e features.
-4. Substitua `extract()` pela sua fonte e as regras de `transform()`.
-5. Defina o modelo em `build_pipeline()` (`ml/train.py`).
-6. `make all`, confira as métricas, itere e comite `models/`.
-7. Apague os testes específicos do Iris em `tests/test_api.py` e `tests/test_etl.py` (ou adapte-os).
 
 ---
 
