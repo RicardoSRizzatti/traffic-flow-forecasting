@@ -14,7 +14,7 @@ Resolver o **TrafficFlowBench** (IEEE Big Data Cup 2026, Kaggle): dez corredores
 | 4. ODME | fluxos não negativos por caminho | 0,20 |
 
 - **Competição:** <https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench>. A definição exata de cada métrica está na aba *Evaluation*; confira antes de implementar o score local.
-- **Dados:** `make data` usa a CLI do Kaggle (via `uv tool run`) e descompacta em `data/raw/trafficflowbench`. Exige aceitar as regras no site e o token em `~/.kaggle/kaggle.json`. São ~12 GB e não podem ser redistribuídos: `data/` nunca vai para o git.
+- **Dados:** `make data` usa a CLI do Kaggle (via `uv tool run`) e descompacta em `data/raw/trafficflowbench`. Exige aceitar as regras no site e o token da API (formato `KGAT_...`, criado em kaggle.com/settings) em `~/.kaggle/access_token`, com `chmod 600`. São ~12 GB e não podem ser redistribuídos: `data/` nunca vai para o git.
 - **Prazos:** relatório final e solução da IEEE Big Data Cup até 15/11/2026; confira a *Timeline* no Kaggle.
 - **Leaderboard:** o público avalia um mês; a classificação final usa outro mês.
 

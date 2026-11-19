@@ -56,7 +56,7 @@ Métricas internas para iterar: RMSE e MAE de velocidade e fluxo por corredor; p
 | **Tamanho** | Cerca de 12 GB descompactados |
 | **Uso** | Os dados seguem as regras da competição e não podem ser redistribuídos |
 
-Os dados **não são versionados** neste repositório. Para reproduzir, aceite as regras na página da competição e baixe com a CLI do Kaggle (token em `~/.kaggle/kaggle.json`):
+Os dados **não são versionados** neste repositório. Para reproduzir, aceite as regras na página da competição e baixe com a CLI do Kaggle (token da API, criado em kaggle.com/settings, salvo em `~/.kaggle/access_token`):
 
 ```bash
 make data   # usa a CLI do Kaggle via uv e descompacta em data/raw/trafficflowbench
