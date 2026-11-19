@@ -15,7 +15,8 @@ Resolver o **TrafficFlowBench** (IEEE Big Data Cup 2026, Kaggle): dez corredores
 
 - **Competição:** <https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench>. A definição exata de cada métrica está na aba *Evaluation*; confira antes de implementar o score local.
 - **Dados:** `make data` usa a CLI do Kaggle (via `uv tool run`) e descompacta em `data/raw/trafficflowbench`. Exige aceitar as regras no site e o token da API (formato `KGAT_...`, criado em kaggle.com/settings) em `~/.kaggle/access_token`, com `chmod 600`. São ~12 GB e não podem ser redistribuídos: `data/` nunca vai para o git.
-- **Prazos:** relatório final e solução da IEEE Big Data Cup até 15/11/2026; confira a *Timeline* no Kaggle.
+- **Prazos:** a submissão final da competição encerrou em 07/11/2026 06:55 UTC (noite de 06/11 nos EUA). As regras foram aceitas depois disso e a página não mostra limite para submissões tardias, que recebem score mas não entram no ranking. O projeto segue como portfólio no GitHub.
+- **Fluxo de trabalho:** toda alteração no repositório vai numa branch própria e entra na `main` por pull request revisado pelo dono do repositório; nada de commit direto na `main`.
 - **Leaderboard:** o público avalia um mês; a classificação final usa outro mês.
 
 ## Estado atual
@@ -44,7 +45,7 @@ O checklist do projeto está na seção **Roteiro** do README: marque os itens c
 
 1. `etl`, `ml` e `app` importam de `tools`; `tools` não importa nenhum deles; `app` não importa `etl`, `ml`, scikit-learn nem pandas.
 2. Modelos só em ONNX, salvos por `tools.model_io.save_onnx_model` (valida e compara com o modelo original). Nada de `joblib`/`pickle` em `models/`. LightGBM/XGBoost convertem via `onnxmltools`.
-3. Pré-processamento que o modelo precisa na previsão fica dentro do `Pipeline`.
+3. Features e pré-processamento ficam no ETL, que entrega os dados prontos ao modelo; o ONNX recebe as features já calculadas. (Decisão do projeto: substitui a regra do template de pôr o pré-processamento dentro do `Pipeline`. As docstrings de `etl/transform.py` e `ml/train.py` ainda dizem o contrário e mudam quando esses arquivos forem reescritos.)
 4. `ml/evaluate.py` mede o próprio `model.onnx`.
 5. `data/` fora do git; `models/` versionado (acima de 50 MB, usar Git LFS).
 

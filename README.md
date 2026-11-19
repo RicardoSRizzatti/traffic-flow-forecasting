@@ -62,7 +62,7 @@ Os dados **não são versionados** neste repositório. Para reproduzir, aceite a
 make data   # usa a CLI do Kaggle via uv e descompacta em data/raw/trafficflowbench
 ```
 
-**Prazos:** pelo cronograma da IEEE Big Data Cup 2026, as equipes entregam relatório final e solução até 15/11/2026, e os vencedores são apresentados na IEEE BigData 2026 (Phoenix, 14 a 17/12/2026). Confira as datas da competição na aba *Timeline* do Kaggle.
+**Prazos:** pela página da IEEE Big Data Cup 2026, a submissão final no Kaggle foi até 06/11/2026, e os resultados são apresentados na IEEE BigData 2026 (Phoenix, 14 a 17/12/2026). Este projeto continua depois do prazo, como estudo e portfólio, com submissões tardias no Kaggle (que recebem score, mas não entram no ranking).
 
 ## Sobre o projeto
 
@@ -175,7 +175,7 @@ Estas regras são verificadas automaticamente em `tests/test_project_rules.py` e
    - compara as previsões do ONNX com as do modelo original (tolerância em `model.parity_tolerance`) e **não grava nada** se divergirem.
 
    Além disso, o `.gitignore` ignora qualquer outro arquivo em `models/`, e um teste falha se aparecer `.joblib`, `.pkl` etc.
-3. **Pré-processamento dentro do Pipeline.** O ETL limpa e aplica regras de negócio; escala, encoding e features derivadas que o modelo precisa na previsão ficam no `Pipeline` do `ml/train.py`, para serem exportados no ONNX. Assim o app não reimplementa nada.
+3. **Features prontas no ETL.** O ETL limpa, aplica as regras de negócio e calcula as features; o modelo (e o ONNX) recebe os dados prontos, sem pré-processamento embutido.
 4. **Avaliação no artefato final.** O `evaluate.py` mede o próprio `model.onnx`, então a métrica exibida é a do modelo que vai para produção.
 5. **Dados fora do git, modelos dentro.** `data/` nunca é versionado. `models/` é: o GitHub avisa acima de 50 MB e bloqueia acima de 100 MB; se um modelo crescer, use Git LFS (instruções no `.gitattributes`).
 
