@@ -35,10 +35,11 @@ front-install: ## Instala as dependências do front
 	cd $(FRONT) && npm ci
 
 # -------------------------------------------------------------------- dados
-data: ## Baixa os dados da competição no Kaggle (token em ~/.kaggle/kaggle.json)
+# A CLI do Kaggle 2.x importa `six` sem declarar a dependência; o --with six contorna.
+data: ## Baixa os dados da competição no Kaggle (token em ~/.kaggle/access_token)
 	mkdir -p data/raw/trafficflowbench
-	$(UV) tool run kaggle competitions download -c $(COMPETITION) -p data/raw
-	unzip -n -q data/raw/$(COMPETITION).zip -d data/raw/trafficflowbench
+	$(UV) tool run --with six kaggle competitions download -c $(COMPETITION) -p data/raw
+	$(RUN) python -m zipfile -e data/raw/$(COMPETITION).zip data/raw/trafficflowbench
 
 # ---------------------------------------------------------------------- ETL
 extract: ## ETL: fonte → data/raw

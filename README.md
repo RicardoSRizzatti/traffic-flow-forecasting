@@ -10,86 +10,112 @@ Reconstruir velocidade e fluxo onde os sensores não medem, prever congestioname
 
 Agências de trânsito monitoram rodovias com detectores instalados no pavimento, que medem a cada poucos minutos quantos veículos passam (fluxo), a que velocidade e com que ocupação da pista. Essa rede é esparsa e falha com frequência: há trechos sem sensor, detectores desligados e janelas inteiras sem dado. Mesmo assim, operar a rodovia exige saber o estado do tráfego em todo o corredor, antecipar onde vai formar fila e entender de onde vem a demanda.
 
-O TrafficFlowBench reúne esses três problemas num único benchmark, construído sobre uma rede viária extraída do OpenStreetMap (formato GMNS), observações de detectores no padrão do PeMS (Caltrans) em intervalos de 5 minutos e informações abertas de trajetórias GPS e pontos de interesse. Por trás de todas as tarefas está a teoria de fluxo de tráfego: velocidade, densidade e fluxo de cada trecho seguem um **diagrama fundamental**, e uma boa solução precisa respeitar essa física, não só acertar números.
+O TrafficFlowBench reúne esses três problemas num único benchmark. Os dados são **sintéticos**: um modelo de fluxo de tráfego, calibrado com detectores reais desses mesmos corredores, gerou os registros a cada 5 minutos. A calibração cobriu velocidade de fluxo livre, capacidade por faixa, densidade de congestionamento, demanda por dia da semana e horário, ruído de medição e disponibilidade dos detectores. Nenhum registro real aparece na base, e o calendário (2030–2031) não corresponde a nenhum período real. A rede viária vem em parte do OpenStreetMap.
+
+Por trás de todas as tarefas está a teoria de fluxo de tráfego. Velocidade, densidade e fluxo de cada trecho seguem um **diagrama fundamental**, e os veículos se conservam de um trecho para o seguinte. Uma boa solução precisa respeitar essa física, não só acertar números.
 
 ## O desafio
 
-São dez corredores de rodovia com dados a cada 5 minutos e quatro tarefas avaliadas sobre os mesmos dados:
+São dez corredores direcionais (cinco rodovias da região de Los Angeles e de Orange County, nos dois sentidos), com dados a cada 5 minutos e quatro tarefas avaliadas sobre os mesmos dados:
 
 | Tarefa | O que prever | Peso no score |
 |---|---|---|
-| 1. Reconstrução do estado | Velocidade e fluxo em detectores e instantes retirados da base | 35% |
-| 2. Previsão de filas | Quais trechos estarão congestionados nos próximos 30 minutos (classificação binária) | 30% |
-| 3. Consistência física | Se a reconstrução da tarefa 1 respeita o diagrama fundamental e a conservação de fluxo | 15% |
+| 1. Reconstrução do estado | Velocidade e fluxo nas células (detector × intervalo de 5 min) apagadas da base: 20%, 30% ou 50% das células, conforme o dia | 35% |
+| 2. Previsão de filas | Em quais trechos haverá fila nos próximos 30 minutos, a partir da última hora observada (sim ou não, por trecho e intervalo) | 30% |
+| 3. Consistência física | Se a reconstrução da tarefa 1 respeita o diagrama fundamental e a conservação de veículos. Não tem arquivo próprio: é calculada sobre a submissão da tarefa 1 | 15% |
 | 4. Estimativa de demanda (ODME) | Fluxos não negativos por caminho, coerentes com as contagens nos detectores | 20% |
 
 O que torna o problema difícil:
 
 - **Dados esparsos e com lacunas**, que exigem combinar informação no tempo (o mesmo detector em outros instantes) e no espaço (detectores vizinhos no corredor).
+- **Detectores imperfeitos**: só cerca de 76% das células têm medição suficiente para contar no score.
 - **Eventos raros**: a formação de fila é a minoria das observações e o que mais importa prever.
 - **Restrições físicas**: uma previsão estatisticamente boa pode violar a relação entre velocidade, densidade e fluxo e perder pontos na tarefa 3.
-- **Volume**: a base tem cerca de 12 GB e a submissão final passa de 6 milhões de linhas.
-- **Generalização no tempo**: o leaderboard público avalia um mês e a classificação final é decidida por outro mês, gerado à parte.
+- **Volume**: a base tem 12,4 GB, e a submissão completa tem quase 7 milhões de linhas (6,7 milhões só da tarefa 1).
+- **Generalização no tempo**: o leaderboard público avalia março de 2031 e a classificação final, abril. Os dois meses foram gerados de forma independente, com incidentes diferentes.
 
 ## Objetivo e métrica
 
 **Objetivo:** construir uma solução para as quatro tarefas que supere com folga os baselines da competição, com atenção especial à reconstrução (tarefa 1) e à previsão de filas (tarefa 2), e servir o modelo de previsão de filas por uma API.
 
-**Métrica:** o score final é a soma ponderada dos scores das tarefas:
+**Métrica:** o score final é a soma ponderada dos scores das tarefas, cada um entre 0 e 1:
 
 ```
 Score = 0,35·S_estado + 0,30·S_fila + 0,15·S_física + 0,20·S_ODME
 ```
 
-Cada `S` está entre 0 e 1. A definição exata de cada componente está na aba *Evaluation* da competição no Kaggle; a descrição do benchmark menciona erros de previsão do tipo RMSE/MAE para velocidade e fluxo.
+Cada tarefa é avaliada por corredor. Os sentidos de uma rodovia entram por média simples, e as rodovias também, então um corredor pequeno pesa tanto quanto um grande. Só contam as células em que o detector mediu pelo menos 75% do intervalo (`pct_observed ≥ 75`).
 
-Métricas internas para iterar: RMSE e MAE de velocidade e fluxo por corredor; precisão, recall e F1 dos eventos de fila; taxa de violação do diagrama fundamental.
+| Tarefa | Como é medida |
+|---|---|
+| 1. Estado | Em cada nível de lacuna (R1 = 20%, R2 = 30%, R3 = 50%): `0,54·max(0, 1 − RMSE_velocidade/25) + 0,46·max(0, 1 − RMSE_fluxo_por_faixa/600)`, com velocidade em km/h e fluxo em veículos/h por faixa. O score é a média simples dos três níveis |
+| 2. Fila | IoU entre as células (trecho × intervalo) previstas com fila e as reais. Há fila quando a velocidade cai a 60% da velocidade de fluxo livre ou menos. Janelas de início de fila e de fila em andamento têm o mesmo peso |
+| 3. Física | `⅓·S_FD + ⅔·S_LWR`, calculado sobre a submissão da tarefa 1: aderência ao diagrama fundamental e resíduo da conservação de veículos entre trechos (modelo LWR) |
+| 4. ODME | `0,45·S_od + 0,25·S_link + 0,15·S_dev + 0,15·S_attr`: erro dos fluxos por caminho, reprodução das contagens nos links, desvio em relação à demanda a priori e distribuição dos destinos |
+
+A especificação completa está no [SCORING_SPEC](https://github.com/jacky850/trafficflowbench-public/blob/main/docs/SCORING_SPEC.md) do repositório oficial.
+
+**Referência a superar:** baselines oficiais na validação, média dos dez corredores.
+
+| Tarefa (baseline) | Baseline | Resposta perfeita |
+|---|---:|---:|
+| Estado (perfil histórico dia da semana × horário) | 0,6929 | 1,0000 |
+| Fila (repete o último estado observado) | 0,3017 | 1,0000 |
+| Física (vem da submissão da tarefa 1) | 0,3549 | 0,9636 |
+| ODME (mínimos quadrados não negativos com prior) | 0,8359 | 1,0000 |
+| **Total** | **0,5534** | **0,9945** |
+
+**Avaliação local:** só a tarefa 1 pode ser medida localmente com a fórmula oficial, nos meses de treino, que trazem os dados completos ao lado da versão com lacunas. As tarefas 2 e 3 dependem de gabaritos que os organizadores não publicam, e a tarefa 4 só pode ser conferida em parte.
 
 ## Dados
 
 | | |
 |---|---|
 | **Competição (dados e regras)** | <https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench> |
-| **Descrição do benchmark** | <https://bigdataieee.org/BigData2026/cup/trafficflowbench/> |
+| **Repositório oficial (avaliadores e baselines)** | <https://github.com/jacky850/trafficflowbench-public> |
 | **IEEE Big Data Cup 2026** | <https://bigdataieee.org/BigData2026/cup/> |
-| **Fontes** | Rede viária do OpenStreetMap em GMNS (OSM2GMNS); detectores no padrão PeMS (velocidade, fluxo e ocupação a cada 5 min); trajetórias GPS e pontos de interesse abertos |
-| **Tamanho** | Cerca de 12 GB descompactados |
+| **Origem** | Registros sintéticos gerados por um modelo de fluxo de tráfego calibrado com detectores reais dos mesmos corredores; rede viária derivada em parte do OpenStreetMap |
+| **Corredores** | Distrito 7 (Los Angeles): I-10 leste/oeste, I-210 leste/oeste, I-405 norte/sul. Distrito 12 (Orange County): I-5 norte/sul, I-405 norte/sul |
+| **Período** | Treino: 01/06/2030 a 28/02/2031 (273 dias, com e sem lacunas). Validação (leaderboard público): 03/2031. Privado (classificação final): 04/2031 |
+| **Conteúdo** | Estados das pistas principais (velocidade, fluxo, ocupação), contagens das rampas de acesso e saída, rede (links, diagrama fundamental por link, topologia, caminhos origem-destino) e modelos de submissão por tarefa |
+| **Tamanho** | 9.688 arquivos (Parquet e CSV), 12,4 GB descompactados (7,8 GB compactados) |
 | **Uso** | Os dados seguem as regras da competição e não podem ser redistribuídos |
 
-Os dados **não são versionados** neste repositório. Para reproduzir, aceite as regras na página da competição e baixe com a CLI do Kaggle (token em `~/.kaggle/kaggle.json`):
+Os dados **não são versionados** neste repositório. Para reproduzir, aceite as regras na página da competição e baixe com a CLI do Kaggle (token da API, criado em kaggle.com/settings, salvo em `~/.kaggle/access_token`):
 
 ```bash
 make data   # usa a CLI do Kaggle via uv e descompacta em data/raw/trafficflowbench
 ```
 
-**Prazos:** pelo cronograma da IEEE Big Data Cup 2026, as equipes entregam relatório final e solução até 15/11/2026, e os vencedores são apresentados na IEEE BigData 2026 (Phoenix, 14 a 17/12/2026). Confira as datas da competição na aba *Timeline* do Kaggle.
+**Prazos:** pela página da IEEE Big Data Cup 2026, a submissão final no Kaggle foi até 06/11/2026, e os resultados são apresentados na IEEE BigData 2026 (Phoenix, 14 a 17/12/2026). Este projeto continua depois do prazo, como estudo e portfólio, com submissões tardias no Kaggle (que recebem score, mas não entram no ranking).
 
 ## Sobre o projeto
 
 | | |
 |---|---|
 | **Problema** | Reconstruir e prever o estado do tráfego em corredores de rodovia e estimar a demanda origem-destino. |
-| **Dados** | TrafficFlowBench (IEEE Big Data Cup 2026): dez corredores, detectores a cada 5 minutos. |
-| **Abordagem (planejada)** | Baselines por perfil histórico (dia da semana × horário) e interpolação espaço-temporal; gradient boosting com defasagens e detectores vizinhos; calibração do diagrama fundamental por trecho para corrigir a reconstrução; mínimos quadrados não negativos para a demanda. Validação por blocos de dias. |
+| **Dados** | TrafficFlowBench (IEEE Big Data Cup 2026): dez corredores sintéticos, detectores a cada 5 minutos. |
+| **Abordagem (planejada)** | Baselines por perfil histórico (dia da semana × horário) e interpolação espaço-temporal; gradient boosting com defasagens e detectores vizinhos; parâmetros publicados do diagrama fundamental por trecho para manter a reconstrução fisicamente coerente; mínimos quadrados não negativos para a demanda. Validação por blocos de dias. |
 | **Métrica principal** | Score ponderado da competição (0,35 / 0,30 / 0,15 / 0,20). |
 | **Resultado** | A preencher: ver `models/metadata.json` ou a seção *Qualidade do modelo* no app. |
 
 ## Roteiro
 
-- [ ] Baixar os dados para `data/raw/trafficflowbench` e adaptar `etl/extract.py` aos arquivos da competição
+- [x] Baixar os dados para `data/raw/trafficflowbench`
+- [ ] Adaptar `etl/extract.py` aos arquivos da competição
 - [ ] Análise exploratória em `notebooks/`: cobertura dos detectores, padrões diários e semanais, episódios de fila, diagrama fundamental empírico por trecho
 - [ ] Baselines das quatro tarefas e primeira submissão completa
 - [ ] Tarefa 1: modelo de reconstrução com features temporais e espaciais, validado por blocos de dias
 - [ ] Tarefa 2: classificador de fila para 30 minutos à frente, exportado em ONNX e servido pela API
-- [ ] Tarefa 3: ajuste da reconstrução ao diagrama fundamental calibrado
+- [ ] Tarefa 3: reconstrução coerente com o diagrama fundamental e a conservação de veículos (avaliada sobre a saída da tarefa 1)
 - [ ] Tarefa 4: estimativa de fluxos por caminho a partir das contagens
 - [ ] Relatório com resultados por tarefa e por corredor
 
 ## Referências
 
-- Descrição do benchmark e critérios de avaliação: <https://bigdataieee.org/BigData2026/cup/trafficflowbench/>
-- Caltrans Performance Measurement System (PeMS): <https://pems.dot.ca.gov/>
-- GMNS — General Modeling Network Specification: <https://github.com/zephyr-data-specs/GMNS>
+- Repositório oficial do benchmark (dados, regras de avaliação e baselines): <https://github.com/jacky850/trafficflowbench-public>
+- Especificação das métricas: <https://github.com/jacky850/trafficflowbench-public/blob/main/docs/SCORING_SPEC.md>
+- Caltrans Performance Measurement System (PeMS), sistema de detectores reais dos distritos 7 e 12: <https://pems.dot.ca.gov/>
 
 ---
 
@@ -175,7 +201,7 @@ Estas regras são verificadas automaticamente em `tests/test_project_rules.py` e
    - compara as previsões do ONNX com as do modelo original (tolerância em `model.parity_tolerance`) e **não grava nada** se divergirem.
 
    Além disso, o `.gitignore` ignora qualquer outro arquivo em `models/`, e um teste falha se aparecer `.joblib`, `.pkl` etc.
-3. **Pré-processamento dentro do Pipeline.** O ETL limpa e aplica regras de negócio; escala, encoding e features derivadas que o modelo precisa na previsão ficam no `Pipeline` do `ml/train.py`, para serem exportados no ONNX. Assim o app não reimplementa nada.
+3. **Features prontas no ETL.** O ETL limpa, aplica as regras de negócio e calcula as features; o modelo (e o ONNX) recebe os dados prontos, sem pré-processamento embutido.
 4. **Avaliação no artefato final.** O `evaluate.py` mede o próprio `model.onnx`, então a métrica exibida é a do modelo que vai para produção.
 5. **Dados fora do git, modelos dentro.** `data/` nunca é versionado. `models/` é: o GitHub avisa acima de 50 MB e bloqueia acima de 100 MB; se um modelo crescer, use Git LFS (instruções no `.gitattributes`).
 
