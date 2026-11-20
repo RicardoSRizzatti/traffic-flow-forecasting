@@ -103,7 +103,7 @@ make data   # usa a CLI do Kaggle via uv e descompacta em data/raw/trafficflowbe
 
 - [x] Baixar os dados para `data/raw/trafficflowbench`
 - [ ] Adaptar `etl/extract.py` aos arquivos da competição
-- [ ] Análise exploratória em `notebooks/`: cobertura dos detectores, padrões diários e semanais, episódios de fila, diagrama fundamental empírico por trecho
+- [ ] Análise exploratória em `notebooks/`: cobertura dos detectores, padrões diários e semanais, episódios de fila, diagrama fundamental empírico por trecho (tarefa 1: [`01_eda_tarefa1.ipynb`](notebooks/01_eda_tarefa1.ipynb))
 - [ ] Baselines das quatro tarefas e primeira submissão completa
 - [ ] Tarefa 1: modelo de reconstrução com features temporais e espaciais, validado por blocos de dias
 - [ ] Tarefa 2: classificador de fila para 30 minutos à frente, exportado em ONNX e servido pela API
